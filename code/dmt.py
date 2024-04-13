@@ -3,7 +3,7 @@ import os
 import shutil
 from pathlib import Path
 import datetime
-import json
+import toml
 
 import funcs
 
@@ -14,16 +14,14 @@ app = typer.Typer(pretty_exceptions_enable=False)
 @app.command(name='commit')
 def commit(
         ingress: List[str] = typer.Argument(),
-        storage: str = typer.Option(),
-        index: str = typer.Option(),
-        no_tag: bool = typer.Option(False),
-):    
-    index_dict = funcs.load_index(index)
+        config: str = typer.Option('config.toml'),
+        no_tags: bool = typer.Option(False),
+):
+    config = toml.load(config)    
+    index_dict = funcs.load_index(config['index'])
     # --------------------------------------------------------------------------
-    timestamp = str(datetime.datetime.now()).replace(':', '-').replace('.', '-').replace(' ', '.')
-    unique_id = funcs.hash_index(index_dict)
-    commit_name = f'{timestamp}.{unique_id}'    
-    commit_path = Path(storage).joinpath(commit_name)    
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+    commit_path = Path(config['storage']).joinpath(timestamp)
     os.mkdir(commit_path)
     print(f'New commit {commit_path}')
     # --------------------------------------------------------------------------    
@@ -35,34 +33,47 @@ def commit(
         parent = Path(commit_path_file).parent.name
         name = Path(commit_path_file).name
         local_file_path = str(Path(parent).joinpath(name))
-        index_dict[local_file_path] = [] if no_tag else funcs.manual_tags(ingress_file)
+        index_dict[local_file_path] = [] if no_tags else funcs.manual_tags(ingress_file)
     # --------------------------------------------------------------------------
-    funcs.write_index(index, index_dict)
-    print(f'Updated {index}')
+    funcs.write_index(config['index'], index_dict)
+    print('Updated {index}'.format(
+        index = config['index'],
+    ))
 
 @app.command(name='list')
 def list_content(
-        index: str = typer.Option(),
+        config: str = typer.Option('config.toml'),
+        with_tags: bool = typer.Option(False),
+        full_path: bool = typer.Option(False),
 ):
-    with open(index, 'r') as f:
-        index_dict = json.load(f)
+    config = toml.load(config)
+    
+    index_dict = funcs.load_index(config['index'])
             
     for key, tags in index_dict.items():
-        print(f'{key}: {tags}')
+        if full_path: key = Path(os.path.abspath(config['storage'])).joinpath(key)
+        
+        if with_tags:
+            print('{key} {tags}'.format(
+                key=key,
+                tags=' '.join(tags),
+            ))
+        else:
+            print(key)
 
 @app.command(name='reset')
 def reset(
-        storage: str = typer.Option(),
-        index: str = typer.Option(),
+        config: str = typer.Option('config.toml'),
 ):
-    funcs.write_index(index, {})    
-    shutil.rmtree(storage)
-    os.mkdir(storage)
+    config = toml.load(config)
+    
+    funcs.write_index(config['index'], {})    
+    shutil.rmtree(config['storage'])
+    os.mkdir(config['storage'])
 
-    print(f'Reset {storage} and {index}')    
-
-@app.command(name='test')
-def test():
-    print('Hi')
+    print('Reset {storage} and {index}'.format(
+        storage = config['storage'],
+        index = config['index'],
+    ))
 
 if __name__ == '__main__': app()
